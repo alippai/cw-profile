@@ -1,0 +1,192 @@
+<?php
+
+/**
+ * Implementation of hook_permission().
+ */
+function fd_calculator_permission() {
+  return array(
+    'access fd-calculator' => array(
+      'title' => t('Access FD calculator'),
+      'description' => t('Perform queries against the functional dependency calculator prolog service.'),
+    ),
+  );
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function fd_calculator_menu() {
+  $items = array();
+
+  $items['fd-calculator'] = array(
+  	'title' => 'Functional Dependency Calculator',
+    'description' => 'An online webservice form to check functional dependencies.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('fd_calculator_main_form'),
+    'access arguments' => array('access fd-calculator'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Main FD Calculator form on path "/fd-calculator".
+ */
+function fd_calculator_main_form($form, &$form_state) {
+  $form = array();
+  $form['schema'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Relational schema'),
+    '#description' => t('Simple list of attributes. e.g., "abcde"'),
+    '#required' => TRUE,
+    '#maxlength' => 20,
+  );
+  $form['dependencies'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Functional dependency set'),
+    '#description' => t('Comma separated list of dependencies. e.g., "ab->cd, b->e, d->e"'),
+    '#required' => TRUE,
+    '#maxlength' => 60,
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+    '#ajax' => array(
+      'callback' => 'fd_calculator_main_form_ajax',
+      'wrapper' => 'results',
+      'effect' => 'slide',
+      'progress' => array('type' => 'throbber'),
+    ),
+  );
+  $form['results'] = array(
+    '#prefix' => '<div id="results">',
+    '#suffix' => '</div>',
+    '#tree' => TRUE,
+  );
+  if(isset($form_state['store']['results'])) {  // Append results if available.
+    $form['results']['table'] = array(
+      '#markup' => theme('fd_calculator_table', array('results' => $form_state['store']['results'])),
+    );
+  }
+  return $form;
+}
+
+/**
+ * Main form validation.
+ */
+function fd_calculator_main_form_validate($form, &$form_state) {
+  // Validate schema field.
+  $schema = $form_state['values']['schema'];
+  if (preg_match('/[^a-z]/', $schema)) {
+    form_set_error('schema', t('Please use only lowercase characters (a-z).'));
+  }
+
+  // Validate the dependencies field.
+  $dependencies = $form_state['values']['dependencies'];
+  if (preg_match('/^\s*([a-z]+->[a-z]+)(,\s*[a-z]+->[a-z]+)*\s*$/', $dependencies)) {
+    form_set_error('dependencies', t('Please use the format example below.'));
+  }
+}
+
+/**
+ * Web-service request on main form submit. Filling form_state results with the response data. Logging it into database.
+ */
+function fd_calculator_main_form_submit($form, &$form_state) {
+  $r = urlencode($form_state['values']['schema']);
+  $f = urlencode($form_state['values']['dependencies']);
+  $url = variable_get('fd_calculator_host', 'http://tiresias.db.bme.hu:5000/') . "json?r=" . $r . "&f=" . $f;
+
+  // @todo Replace with asynchronous method.
+  $results = json_decode(file_get_contents($url));
+  $form_state['store']['results'] = $results;
+
+  // @todo Extend storage and results serialization.
+  watchdog('fd_calculator', "Query run. Schema: @r , dependencies: @f. Result: @results", array(
+    '@r' => $form_state['values']['schema'],
+    '@f' => $form_state['values']['dependencies'],
+    '@results' => print_r($results, 1),
+  ), WATCHDOG_INFO);
+
+  $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * Ajax main form callback. Triggers _submit().
+ */
+function fd_calculator_main_form_ajax($form, &$form_state) {
+  return $form['results'];
+}
+
+/**
+ * Implementation of hook_theme().
+ */
+function fd_calculator_theme($existing, $type, $theme, $path) {
+  return array(
+    'fd_calculator_table' => array(
+      'variables' => array('results' => NULL),
+    ),
+  );
+}
+
+/**
+ * Theme function for the return results.
+ */
+function theme_fd_calculator_table($variables) {
+  $results = $variables['results'];
+  $rows = array(
+    array('data' => array(
+      array(
+        'header' => TRUE,
+        'data' => t('Normal form'),
+      ),
+      substr($results->nf, 2),
+    )),
+    array('data' => array(
+      array(
+        'header' => TRUE,
+        'data' => format_plural(count($results->keys), 'Key', 'Keys'),
+      ),
+      implode(', ', $results->keys),
+    )),
+    array('data' => array(
+      array(
+        'header' => TRUE,
+        'data' => format_plural(count($results->primaryattributes), 'Primary attribute', 'Primary attributes'),
+      ),
+      implode(', ', $results->primaryattributes),
+    )),
+    array('data' => array(
+      array(
+        'header' => TRUE,
+        'data' => format_plural(count($results->secondaryattributes), 'Secondary attribute', 'Secondary attributes'),
+      ),
+      implode(', ', $results->secondaryattributes),
+    )),
+    array('data' => array(
+      array(
+        'header' => TRUE,
+        'data' => format_plural(count($results->fmin), 'Minimal cover', 'Minimal covers'),
+      ),
+      theme('item_list', array('items' => $results->fmin)),
+    )),
+    array('data' => array(
+      array(
+        'header' => TRUE,
+        'data' => format_plural(count($results->d3nf), '3NF decomposition', '3NF decompositions'),
+      ),
+      theme('item_list', array('items' => $results->d3nf)),
+    )),
+    array('data' => array(
+      array(
+        'header' => TRUE,
+        'data' => format_plural(count($results->bcnf), 'BCNF decomposition', 'BCNF decompositions'),
+      ),
+      theme('item_list', array('items' => $results->bcnf)),
+    )),
+  );
+  return theme('table', array(
+    'header' => array('', t('Result')),
+    'rows' => $rows,
+  ));
+}

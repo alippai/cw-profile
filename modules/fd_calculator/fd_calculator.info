@@ -1,0 +1,4 @@
+name = FD Calculator
+description = Funcional Dependency Calculator
+package = BME
+core = 7.x

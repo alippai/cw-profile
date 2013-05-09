@@ -1,0 +1,6 @@
+name = Functional dependency calculator profile
+description = An example profile that shows how can you create a profile. :)
+core = 7.x
+theme = bartik
+
+dependencies[] = fd_calculator
