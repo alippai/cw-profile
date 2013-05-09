@@ -1,5 +1,5 @@
 name = Functional dependency calculator profile
-description = An example profile that shows how can you create a profile. :)
+description = An example profile. :)
 core = 7.x
 theme = bartik
 
