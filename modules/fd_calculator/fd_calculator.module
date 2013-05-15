@@ -19,7 +19,7 @@ function fd_calculator_menu() {
   $items = array();
 
   $items['fd-calculator'] = array(
-  	'title' => 'Functional Dependency Calculator',
+    'title' => 'Functional Dependency Calculator',
     'description' => 'An online webservice form to check functional dependencies.',
     'page callback' => 'drupal_get_form',
     'page arguments' => array('fd_calculator_main_form'),
